@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { EEGData, BandPower, BrainState, CorrelationData, Recording, RecordingFrame, PlaybackState } from '../types';
+import { EEGData, BandPower, BrainState, CorrelationData, Recording, RecordingFrame, PlaybackState, MultiChannelComparison } from '../types';
 
 const STORAGE_KEY = 'eeg_recordings';
 
@@ -32,12 +32,19 @@ interface EEGState {
   playbackMode: boolean;
   activeRecording: Recording | null;
   playbackState: PlaybackState;
+  comparisonChannels: string[];
+  multiChannelComparison: MultiChannelComparison | null;
+  comparisonLoading: boolean;
   setEEGData: (d: EEGData | null) => void;
   setChannel: (c: string) => void;
   setBandPower: (b: BandPower | null) => void;
   setStreaming: (v: boolean) => void;
   setBrainState: (s: BrainState | null) => void;
   setCorrelationData: (c: CorrelationData | null) => void;
+  setComparisonChannels: (channels: string[]) => void;
+  toggleComparisonChannel: (channel: string) => void;
+  setMultiChannelComparison: (data: MultiChannelComparison | null) => void;
+  setComparisonLoading: (loading: boolean) => void;
   startRecording: () => void;
   stopRecording: (name: string) => void;
   addRecordingFrame: (eeg: EEGData, bands: BandPower, brainState: BrainState) => void;
@@ -67,12 +74,28 @@ export const useEEGStore = create<EEGState>((set, get) => ({
     currentTime: 0,
     currentFrame: null,
   },
+  comparisonChannels: ['Fp1', 'Fp2', 'O1', 'O2'],
+  multiChannelComparison: null,
+  comparisonLoading: false,
   setEEGData: (d) => set({ eegData: d }),
   setChannel: (c) => set({ selectedChannel: c }),
   setBandPower: (b) => set({ bandPower: b }),
   setStreaming: (v) => set({ isStreaming: v }),
   setBrainState: (s) => set({ brainState: s }),
   setCorrelationData: (c) => set({ correlationData: c }),
+  setComparisonChannels: (channels) => set({ comparisonChannels: channels }),
+  toggleComparisonChannel: (channel) => {
+    const { comparisonChannels } = get();
+    if (comparisonChannels.includes(channel)) {
+      if (comparisonChannels.length > 1) {
+        set({ comparisonChannels: comparisonChannels.filter(c => c !== channel) });
+      }
+    } else {
+      set({ comparisonChannels: [...comparisonChannels, channel] });
+    }
+  },
+  setMultiChannelComparison: (data) => set({ multiChannelComparison: data }),
+  setComparisonLoading: (loading) => set({ comparisonLoading: loading }),
   startRecording: () => {
     const { selectedChannel } = get();
     set({

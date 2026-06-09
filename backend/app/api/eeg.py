@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from ..services.eeg_processor import generate_mock_eeg, compute_band_power, compute_spectrogram, compute_brain_state, compute_correlation, SAMPLE_RATE
+from ..services.eeg_processor import generate_mock_eeg, compute_band_power, compute_spectrogram, compute_brain_state, compute_correlation, SAMPLE_RATE, CHANNELS, CHANNEL_NAMES
 
 router = APIRouter(prefix="/eeg", tags=["eeg"])
 
@@ -52,4 +52,27 @@ async def full_sample(channel: str, duration: float = 3.0):
         'bands': compute_band_power(channel_data, SAMPLE_RATE),
         'brainState': compute_brain_state(channel_data, SAMPLE_RATE),
         'correlation': compute_correlation(channel, data['data'], SAMPLE_RATE)
+    }
+
+@router.get("/multi-channel-comparison")
+async def multi_channel_comparison(channels: str = 'Fp1,Fp2,O1,O2', duration: float = 3.0):
+    requested = [ch.strip() for ch in channels.split(',') if ch.strip() in CHANNELS]
+    if not requested:
+        requested = CHANNELS[:4]
+    data = generate_mock_eeg(duration)
+    import time
+    snapshots = []
+    for ch in requested:
+        ch_data = data['data'][ch]
+        snapshots.append({
+            'channel': ch,
+            'channelName': CHANNEL_NAMES.get(ch, ch),
+            'bandPower': compute_band_power(ch_data, SAMPLE_RATE),
+            'brainState': compute_brain_state(ch_data, SAMPLE_RATE),
+            'waveform': ch_data,
+            'time': data['time'],
+        })
+    return {
+        'channels': snapshots,
+        'timestamp': int(time.time() * 1000),
     }

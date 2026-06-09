@@ -42,3 +42,17 @@ export interface PlaybackState {
   currentTime: number;
   currentFrame: RecordingFrame | null;
 }
+
+export interface ChannelSnapshot {
+  channel: string;
+  channelName: string;
+  bandPower: BandPower;
+  brainState: BrainState;
+  waveform: number[];
+  time: number[];
+}
+
+export interface MultiChannelComparison {
+  channels: ChannelSnapshot[];
+  timestamp: number;
+}
