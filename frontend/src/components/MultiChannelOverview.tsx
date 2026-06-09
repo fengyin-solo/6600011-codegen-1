@@ -25,18 +25,25 @@ const BAND_NAMES: Record<string, string> = { delta: 'Delta', theta: 'Theta', alp
 const BAND_COLORS = ['#1565c0', '#2e7d32', '#f9a825', '#e53935', '#6a1b9a'];
 
 const SAMPLE_RATE = 256;
+const DOWNSAMPLE_FACTOR = 4;
 
 const generateMockComparison = (channels: string[]): MultiChannelComparison => {
-  const length = Math.floor(SAMPLE_RATE * 3);
-  const time = Array.from({ length }, (_, i) => i / SAMPLE_RATE);
+  const fullLength = Math.floor(SAMPLE_RATE * 3);
+  const time: number[] = [];
+  for (let i = 0; i < fullLength; i += DOWNSAMPLE_FACTOR) {
+    time.push(i / SAMPLE_RATE);
+  }
   const snapshots: ChannelSnapshot[] = channels.map(ch => {
     const alphaFreq = 8 + Math.random() * 4;
     const betaFreq = 15 + Math.random() * 10;
-    const waveform = time.map(t =>
-      0.5 * Math.sin(2 * Math.PI * alphaFreq * t) +
-      0.3 * Math.sin(2 * Math.PI * betaFreq * t) +
-      0.2 * (Math.random() * 2 - 1)
-    );
+    const waveform: number[] = [];
+    for (let i = 0; i < fullLength; i += DOWNSAMPLE_FACTOR) {
+      const t = i / SAMPLE_RATE;
+      const value = 0.5 * Math.sin(2 * Math.PI * alphaFreq * t) +
+                    0.3 * Math.sin(2 * Math.PI * betaFreq * t) +
+                    0.2 * (Math.random() * 2 - 1);
+      waveform.push(value);
+    }
     const total = 10 + Math.random() * 5;
     const bandPower = {
       delta: total * (0.2 + Math.random() * 0.1),
@@ -106,19 +113,21 @@ const ChannelPill: React.FC<{
 );
 
 const WaveformSection: React.FC<{ data: MultiChannelComparison }> = ({ data }) => {
-  const step = Math.max(1, Math.floor(data.channels[0]?.time.length / 200));
-  const chartData = data.channels[0]?.time
-    ?.filter((_, i) => i % step === 0)
-    .map((t, idx) => {
-      const point: Record<string, number | string> = { t: t.toFixed(3) };
-      data.channels.forEach(snap => {
-        const sampledIdx = idx * step;
-        point[snap.channel] = sampledIdx < snap.waveform.length
-          ? Number(snap.waveform[sampledIdx].toFixed(4))
-          : 0;
-      });
-      return point;
-    }) || [];
+  if (!data.channels.length || !data.channels[0].time.length) return null;
+
+  const firstSnap = data.channels[0];
+  const step = Math.max(1, Math.floor(firstSnap.time.length / 200));
+
+  const chartData: Record<string, number | string>[] = [];
+  for (let i = 0; i < firstSnap.time.length; i += step) {
+    const point: Record<string, number | string> = { t: firstSnap.time[i].toFixed(3) };
+    for (const snap of data.channels) {
+      point[snap.channel] = i < snap.waveform.length
+        ? Number(snap.waveform[i].toFixed(4))
+        : 0;
+    }
+    chartData.push(point);
+  }
 
   return (
     <div style={{ marginBottom: '16px' }}>
@@ -362,22 +371,44 @@ export const MultiChannelOverview: React.FC = () => {
 
   const intervalRef = useRef<number | null>(null);
 
+  const fetchRef = useRef(0);
+
   const fetchComparison = async () => {
     const state = useEEGStore.getState();
     if (state.playbackMode) return;
+    const fetchId = ++fetchRef.current;
     state.setComparisonLoading(true);
     let result: MultiChannelComparison;
     try {
       const { data } = await axios.get(`/api/eeg/multi-channel-comparison?channels=${state.comparisonChannels.join(',')}&duration=3`);
+      if (fetchId !== fetchRef.current) return;
       result = {
         channels: data.channels.map((ch: any) => ({
-          ...ch,
-          bandPower: ch.bandPower,
-          brainState: ch.brainState,
+          channel: ch.channel,
+          channelName: ch.channelName || CHANNEL_NAMES[ch.channel] || ch.channel,
+          bandPower: {
+            delta: Number(ch.bandPower?.delta ?? 0),
+            theta: Number(ch.bandPower?.theta ?? 0),
+            alpha: Number(ch.bandPower?.alpha ?? 0),
+            beta: Number(ch.bandPower?.beta ?? 0),
+            gamma: Number(ch.bandPower?.gamma ?? 0),
+          },
+          brainState: {
+            focus: Number(ch.brainState?.focus ?? 0),
+            relaxation: Number(ch.brainState?.relaxation ?? 0),
+            fatigue: Number(ch.brainState?.fatigue ?? 0),
+            status: ch.brainState?.status ?? 'neutral',
+            statusLabel: ch.brainState?.statusLabel ?? '平稳',
+            statusColor: ch.brainState?.statusColor ?? '#757575',
+            timestamp: Number(ch.brainState?.timestamp ?? Date.now()),
+          },
+          waveform: (ch.waveform ?? []).map((v: any) => Number(v)),
+          time: (ch.time ?? []).map((v: any) => Number(v)),
         })),
-        timestamp: data.timestamp,
+        timestamp: Number(data.timestamp ?? Date.now()),
       };
     } catch {
+      if (fetchId !== fetchRef.current) return;
       result = generateMockComparison(state.comparisonChannels);
     }
     state.setMultiChannelComparison(result);
@@ -388,9 +419,12 @@ export const MultiChannelOverview: React.FC = () => {
     fetchComparison();
     intervalRef.current = window.setInterval(fetchComparison, 4000);
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
-  }, [comparisonChannels]);
+  }, [comparisonChannels.join(',')]);
 
   return (
     <div style={{ padding: '16px', background: '#fff', borderRadius: '12px', margin: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>

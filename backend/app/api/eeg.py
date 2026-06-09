@@ -3,6 +3,8 @@ from ..services.eeg_processor import generate_mock_eeg, compute_band_power, comp
 
 router = APIRouter(prefix="/eeg", tags=["eeg"])
 
+DOWNSAMPLE_FACTOR = 4
+
 @router.get("/stream")
 async def stream_eeg(duration: float = 5.0):
     return generate_mock_eeg(duration)
@@ -61,16 +63,19 @@ async def multi_channel_comparison(channels: str = 'Fp1,Fp2,O1,O2', duration: fl
         requested = CHANNELS[:4]
     data = generate_mock_eeg(duration)
     import time
+    full_time = data['time']
+    ds_time = [round(full_time[i], 4) for i in range(0, len(full_time), DOWNSAMPLE_FACTOR)]
     snapshots = []
     for ch in requested:
         ch_data = data['data'][ch]
+        ds_waveform = [round(float(ch_data[i]), 6) for i in range(0, len(ch_data), DOWNSAMPLE_FACTOR)]
         snapshots.append({
             'channel': ch,
             'channelName': CHANNEL_NAMES.get(ch, ch),
             'bandPower': compute_band_power(ch_data, SAMPLE_RATE),
             'brainState': compute_brain_state(ch_data, SAMPLE_RATE),
-            'waveform': ch_data,
-            'time': data['time'],
+            'waveform': ds_waveform,
+            'time': ds_time,
         })
     return {
         'channels': snapshots,
